@@ -1,5 +1,5 @@
-import "./pnr.css";
 "use client";
+import "./pnr.css";
 
 import { FormEvent, useEffect, useState } from "react";
 import { ArrowLeft, CheckCircle2, Clock3, Loader2, ShieldCheck, TrainFront, XCircle } from "lucide-react";
