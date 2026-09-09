@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useState } from "react";
 import { ArrowLeft, Check, MessageCircle, ShieldCheck, TrainFront } from "lucide-react";
 import styles from "./profile.module.css";
@@ -14,8 +15,9 @@ const profiles: Record<string, {name:string;age:number;initials:string;city:stri
   dev:{name:"Dev",age:28,initials:"D",city:"Delhi",interests:["Cricket","Tech","Food"],bio:"Good food, long journeys and better conversations."},
 };
 
-export default function PersonProfile({params}:{params:{id:string}}){
-  const person=profiles[params.id] ?? profiles.riya;
+export default function PersonProfile(){
+  const params = useParams<{id:string}>();
+  const person=profiles[params?.id] ?? profiles.riya;
   const [sent,setSent]=useState(false);
   return <main className={styles.page}><div className={styles.shell}>
     <header className={styles.header}><Link href="/people" className={styles.back}><ArrowLeft size={18}/> People</Link><div className={styles.logo}><span><TrainFront size={18}/></span><strong>EXPRESS</strong></div></header>
