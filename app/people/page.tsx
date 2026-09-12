@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, ArrowRight, Check, ChevronRight, Heart, MapPin, ShieldCheck, TrainFront, UserRound } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, MapPin, ShieldCheck, TrainFront, UserRound } from "lucide-react";
 import styles from "./people.module.css";
 
 const people = [

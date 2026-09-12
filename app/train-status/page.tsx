@@ -16,65 +16,84 @@ import {
 } from "lucide-react";
 import styles from "./train-status.module.css";
 
-type Train = {
-  number: string;
-  name: string;
-  from: string;
-  to: string;
-  departure: string;
-  arrival: string;
-  delay: string;
-  current: string;
-  next: string;
-  updated: string;
-  stops: { name: string; code: string; time: string; state: "departed" | "current" | "upcoming"; delay: string }[];
-};
+interface RouteStop {
+  sequence: number;
+  stationCode: string;
+  stationName: string;
+  scheduledArrival?: string | null;
+  scheduledDeparture?: string | null;
+  actualArrival?: string | null;
+  actualDeparture?: string | null;
+  delayArrival?: number | null;
+  delayDeparture?: number | null;
+  status: "departed" | "current" | "upcoming" | string;
+  platform?: string | null;
+}
 
-const trains: Record<string, Train> = {
-  "12951": {
-    number: "12951",
-    name: "Mumbai Rajdhani Express",
-    from: "New Delhi",
-    to: "Mumbai Central",
-    departure: "16:55",
-    arrival: "08:35 +1",
-    delay: "18 min late",
-    current: "Kota Junction",
-    next: "Ratlam Junction",
-    updated: "5 min ago",
-    stops: [
-      { name: "New Delhi", code: "NDLS", time: "16:55", state: "departed", delay: "On time" },
-      { name: "Kota Junction", code: "KOTA", time: "23:10", state: "current", delay: "18 min late" },
-      { name: "Ratlam Junction", code: "RTM", time: "02:15", state: "upcoming", delay: "Expected 02:33" },
-      { name: "Mumbai Central", code: "MMCT", time: "08:35", state: "upcoming", delay: "Expected 08:53" },
-    ],
-  },
-  "12901": {
-    number: "12901",
-    name: "Gujarat Mail",
-    from: "Mumbai Central",
-    to: "Ahmedabad",
-    departure: "21:40",
-    arrival: "06:45 +1",
-    delay: "On time",
-    current: "Borivali",
-    next: "Vapi",
-    updated: "3 min ago",
-    stops: [
-      { name: "Mumbai Central", code: "MMCT", time: "21:40", state: "departed", delay: "On time" },
-      { name: "Borivali", code: "BVI", time: "22:12", state: "current", delay: "On time" },
-      { name: "Vapi", code: "VAPI", time: "00:25", state: "upcoming", delay: "Expected 00:25" },
-      { name: "Ahmedabad", code: "ADI", time: "06:45", state: "upcoming", delay: "Expected 06:45" },
-    ],
-  },
-};
+interface TrainStatusResult {
+  trainNumber: string;
+  trainName: string;
+  status: string;
+  delayMinutes: number;
+  currentStation: string | null;
+  nextStation: string | null;
+  source?: { code: string; name: string } | null;
+  destination?: { code: string; name: string } | null;
+  lastUpdatedAt?: string | null;
+  route: RouteStop[];
+  demo?: boolean;
+}
+
+function formatTime(iso?: string | null): string {
+  if (!iso) return "—";
+  // If it's already a short time string like "16:55", return as-is
+  if (/^\d{2}:\d{2}$/.test(iso)) return iso;
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
+  } catch {
+    return iso;
+  }
+}
+
+function delayLabel(minutes?: number | null): string {
+  if (minutes == null) return "—";
+  if (minutes === 0) return "On time";
+  if (minutes > 0) return `${minutes} min late`;
+  return `${Math.abs(minutes)} min early`;
+}
 
 export default function TrainStatusPage() {
-  const [trainNumber, setTrainNumber] = useState("12951");
-  const [result, setResult] = useState<Train | null>(trains["12951"]);
+  const [trainNumber, setTrainNumber] = useState("");
+  const [result, setResult] = useState<TrainStatusResult | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [lastSearched, setLastSearched] = useState("12951");
+  const [lastSearched, setLastSearched] = useState("");
+
+  async function fetchStatus(number: string) {
+    setLoading(true);
+    setError("");
+    setResult(null);
+    setLastSearched(number);
+
+    try {
+      const response = await fetch(`/api/train-status?train=${encodeURIComponent(number)}`, {
+        cache: "no-store",
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data?.error || "Unable to fetch train status. Please try again.");
+        return;
+      }
+
+      setResult(data);
+    } catch {
+      setError("Network error. Please check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function checkStatus(event: React.FormEvent) {
     event.preventDefault();
@@ -84,28 +103,18 @@ export default function TrainStatusPage() {
       setResult(null);
       return;
     }
-
-    setError("");
-    setLoading(true);
-    setLastSearched(value);
-
-    window.setTimeout(() => {
-      const found = trains[value];
-      if (!found) {
-        setResult(null);
-        setError(`Demo status is not available for ${value} yet. Try 12951 or 12901.`);
-      } else {
-        setResult(found);
-      }
-      setLoading(false);
-    }, 650);
+    fetchStatus(value);
   }
 
   function refreshStatus() {
-    setTrainNumber(lastSearched);
-    setLoading(true);
-    window.setTimeout(() => setLoading(false), 650);
+    if (lastSearched) fetchStatus(lastSearched);
   }
+
+  const stopStateClass = (status: string): "departed" | "current" | "upcoming" => {
+    if (status === "departed") return "departed";
+    if (status === "current") return "current";
+    return "upcoming";
+  };
 
   return (
     <main className={styles.page}>
@@ -127,8 +136,8 @@ export default function TrainStatusPage() {
               inputMode="numeric"
               maxLength={5}
               value={trainNumber}
-              onChange={(event) => setTrainNumber(event.target.value.replace(/\D/g, ""))}
-              placeholder="Enter train number"
+              onChange={(event) => { setTrainNumber(event.target.value.replace(/\D/g, "")); setError(""); }}
+              placeholder="Enter train number (e.g. 12951)"
               aria-label="Train number"
             />
             <button type="submit" disabled={loading}>
@@ -136,36 +145,77 @@ export default function TrainStatusPage() {
             </button>
           </form>
           {error && <p className={styles.error}><AlertCircle size={15} /> {error}</p>}
-          <p className={styles.example}>Try demo trains: <button type="button" onClick={() => setTrainNumber("12951")}>12951</button> · <button type="button" onClick={() => setTrainNumber("12901")}>12901</button></p>
         </section>
 
-        {loading && <section className={styles.statusCard}><div className={styles.loadingState}><RefreshCw size={22} className={styles.spin} /><strong>Fetching latest train status...</strong><span>Please wait a moment.</span></div></section>}
+        {loading && (
+          <section className={styles.statusCard}>
+            <div className={styles.loadingState}>
+              <RefreshCw size={22} className={styles.spin} />
+              <strong>Fetching latest train status...</strong>
+              <span>Please wait a moment.</span>
+            </div>
+          </section>
+        )}
 
         {!loading && result && (
           <>
             <section className={styles.statusCard}>
               <div className={styles.statusTop}>
                 <div>
-                  <div className={styles.trainNo}>{result.number} <span>{result.name}</span></div>
-                  <div className={styles.route}>{result.from} <ArrowRight size={17} /> {result.to}</div>
-                </div>
-                <span className={styles.delay}><Clock3 size={14} /> {result.delay}</span>
-              </div>
-
-              <div className={styles.currentBox}>
-                <div className={styles.currentIcon}><MapPin size={21} /></div>
-                <div><small>Currently at</small><strong>{result.current}</strong><span>Next stop: {result.next}</span></div>
-                <div className={styles.updated}>Updated<br /><b>{result.updated}</b></div>
-              </div>
-
-              <div className={styles.timeline}>
-                {result.stops.map((stop) => (
-                  <div className={`${styles.stop} ${styles[stop.state]}`} key={stop.code}>
-                    <div className={styles.dot}>{stop.state === "departed" && <CheckCircle2 size={15} />}</div>
-                    <div className={styles.stopInfo}><strong>{stop.name}</strong><span>{stop.code} · {stop.time}</span><small>{stop.delay}</small></div>
+                  <div className={styles.trainNo}>{result.trainNumber} <span>{result.trainName}</span></div>
+                  <div className={styles.route}>
+                    {result.source?.name ?? "—"} <ArrowRight size={17} /> {result.destination?.name ?? "—"}
                   </div>
-                ))}
+                </div>
+                <span className={styles.delay}>
+                  <Clock3 size={14} /> {delayLabel(result.delayMinutes)}
+                </span>
               </div>
+
+              {(result.currentStation || result.nextStation) && (
+                <div className={styles.currentBox}>
+                  <div className={styles.currentIcon}><MapPin size={21} /></div>
+                  <div>
+                    <small>Currently at</small>
+                    <strong>{result.currentStation ?? "—"}</strong>
+                    {result.nextStation && <span>Next stop: {result.nextStation}</span>}
+                  </div>
+                  {result.lastUpdatedAt && (
+                    <div className={styles.updated}>
+                      Updated<br />
+                      <b>{formatTime(result.lastUpdatedAt)}</b>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {result.route.length > 0 && (
+                <div className={styles.timeline}>
+                  {result.route.map((stop) => {
+                    const stateClass = stopStateClass(stop.status);
+                    const displayTime = formatTime(stop.actualDeparture ?? stop.scheduledDeparture ?? stop.actualArrival ?? stop.scheduledArrival);
+                    const delay = stop.status === "departed"
+                      ? delayLabel(stop.delayDeparture ?? stop.delayArrival)
+                      : stop.status === "upcoming"
+                      ? (stop.delayArrival != null ? `Expected ${delayLabel(stop.delayArrival)}` : "Upcoming")
+                      : delayLabel(stop.delayArrival ?? stop.delayDeparture);
+
+                    return (
+                      <div className={`${styles.stop} ${styles[stateClass]}`} key={`${stop.stationCode}-${stop.sequence}`}>
+                        <div className={styles.dot}>
+                          {stateClass === "departed" && <CheckCircle2 size={15} />}
+                        </div>
+                        <div className={styles.stopInfo}>
+                          <strong>{stop.stationName}</strong>
+                          <span>{stop.stationCode} · {displayTime}</span>
+                          <small>{delay}</small>
+                          {stop.platform && <small>Platform {stop.platform}</small>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               <button type="button" className={styles.refreshButton} onClick={refreshStatus}>
                 <RefreshCw size={15} /> Refresh status
@@ -173,19 +223,40 @@ export default function TrainStatusPage() {
             </section>
 
             <section className={styles.infoGrid}>
-              <div><small>Departure</small><strong>{result.departure}</strong><span>{result.from}</span></div>
-              <div><small>Expected arrival</small><strong>{result.arrival}</strong><span>{result.to}</span></div>
-              <div><small>Running status</small><strong>{result.delay}</strong><span>Last updated {result.updated}</span></div>
+              <div>
+                <small>From</small>
+                <strong>{result.source?.name ?? "—"}</strong>
+                <span>{result.source?.code ?? ""}</span>
+              </div>
+              <div>
+                <small>To</small>
+                <strong>{result.destination?.name ?? "—"}</strong>
+                <span>{result.destination?.code ?? ""}</span>
+              </div>
+              <div>
+                <small>Running status</small>
+                <strong>{delayLabel(result.delayMinutes)}</strong>
+                <span>{result.status}</span>
+              </div>
             </section>
 
-            <div className={styles.demoNote}>
-              <ShieldCheck size={18} />
-              <div><strong>Demo mode enabled</strong><p>This MVP currently uses safe demo data for testing the complete search, loading, error and refresh flow. A railway-status provider/API key is required before showing real live railway data.</p></div>
-            </div>
+            {result.demo && (
+              <div className={styles.demoNote}>
+                <ShieldCheck size={18} />
+                <div>
+                  <strong>Demo mode active</strong>
+                  <p>Set RAILRADAR_API_KEY in your server environment to enable live railway data from RailRadar.</p>
+                </div>
+              </div>
+            )}
           </>
         )}
 
-        <footer><Link href="/pnr">Check PNR</Link><span>·</span><span>EXPRESS · Real-World Social Friends</span></footer>
+        <footer>
+          <Link href="/pnr">Check PNR</Link>
+          <span>·</span>
+          <span>EXPRESS · Real-World Social Friends</span>
+        </footer>
       </div>
     </main>
   );
